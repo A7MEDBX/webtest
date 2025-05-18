@@ -480,3 +480,80 @@ document.getElementById('checkup-submit').addEventListener('click', async () => 
 document.getElementById('checkup-cancel').addEventListener('click', () => {
     closeCheckupModal();
 });
+
+document.addEventListener('DOMContentLoaded', () => {
+    // Single definition for hiding sections
+    function hideAllSections() {
+        document.querySelectorAll('main > section').forEach(s => s.style.display = 'none');
+    }
+
+    // Navigation handlers – defined once
+    document.getElementById('nav-login').onclick = () => { hideAllSections(); showSection('login-section'); return false; };
+    document.getElementById('nav-signup').onclick = () => { hideAllSections(); showSection('signup-section'); return false; };
+
+    // Single onsubmit for the appointment booking form (consistent element id)
+    const appointmentForm = document.getElementById('book-appointment-form');
+    appointmentForm.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const doctor_id = document.getElementById('doctor-select').value;
+        const date = document.getElementById('appointment-date').value;
+        const time = document.getElementById('appointment-time').value;
+        // Call backend to book appointment
+        await fetch(api + '/appointments', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ patient_id: currentUser.id, doctor_id, date, time })
+        });
+        await loadPatientAppointments();
+        appointmentForm.reset();
+    });
+
+    // Login form handler (defined once)
+    document.getElementById('login-form').onsubmit = async function(e) {
+        e.preventDefault();
+        document.getElementById('login-error').textContent = '';
+        const email = document.getElementById('login-email').value;
+        const password = document.getElementById('login-password').value;
+        const res = await fetch(api + '/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, password })
+        });
+        const data = await res.json();
+        if (data.error) {
+            document.getElementById('login-error').textContent = data.error;
+        } else {
+            currentUser = data;
+            hideAllSections();
+            // Routing based on role
+            if (data.role === 'pending') {
+                showSection('pending-section');
+            } else if (data.role === 'staff' || data.role === 'admin') {
+                await loadUsersTable();
+                showSection('dashboard-staff');
+            } else if (data.role === 'patient') {
+                document.getElementById('patient-name').textContent = data.name;
+                showSection('dashboard-patient');
+                await loadDoctors();
+                await loadPatientAppointments();
+            } else if (data.role === 'doctor') {
+                document.getElementById('doctor-name').textContent = data.name;
+                // Fetch doctor record to obtain doctor_id
+                const docRes = await fetch(api + '/doctor/' + data.id);
+                const docRecord = await docRes.json();
+                currentUser.doctor_id = docRecord ? docRecord.id : null;
+                showSection('dashboard-doctor');
+                await loadDoctorAppointments();
+            }
+        }
+    };
+
+    // Utility function to show a section
+    function showSection(id) {
+        hideAllSections();
+        document.getElementById(id).style.display = 'block';
+    }
+
+    // Show login section by default
+    showSection('login-section');
+});
